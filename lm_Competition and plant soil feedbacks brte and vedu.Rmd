@@ -1,0 +1,963 @@
+---
+title: "competition and plant soil feedbacks between Bromus tectorum and Ventenata dubia"
+author: ""
+date: "2025-01-30"
+output: word_document
+---
+
+
+
+ set up
+
+```{r}
+library(lme4)
+library(lmerTest)
+library(car)
+library(emmeans)
+library(plyr)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(multcomp)
+library(ggpubr)
+library(ggtext)
+#setwd("")
+psf_data_24 <- read_csv("psf.data.24.csv")
+
+psf_data <- as.data.frame(psf_data_24)
+
+
+```
+
+
+# Phase 1
+subsetting, linear models of biomass ~ density + soil, figures
+
+### ventenata 
+```{r}
+ventenata <- subset(psf_data, psf_data$Species == 'VEDU')
+
+ventenata <- subset(ventenata, ventenata$Phase == '1')
+ventenata$Phase <- as.numeric (ventenata$Phase)
+ventenata$Soil <- as.factor(ventenata$Soil)
+ventenata$b_count <- as.integer(ventenata$b_count)
+ventenata$v_count <- as.integer(ventenata$v_count)
+ventenata$Biomass <- as.numeric(ventenata$Biomass)
+
+
+ventenata$Soil <- factor(ventenata$Soil, levels = c("Native", "BRTE", "VEDU"))
+ventenata$Soil <- revalue(ventenata$Soil, c("Native" = "Neutral", "BRTE" = "Bromus tectorum", "VEDU" = "Ventenata dubia"))
+
+```
+
+
+```{r}
+v_mod <- lmer(Biomass ~ (Soil + b_count + v_count)^2 + (Soil * b_count * v_count) + (1 | Pot), data = ventenata)
+
+
+residuals <- residuals(v_mod)
+ggplot(data.frame(eta = predict(v_mod, type="link"), pearson = residuals(v_mod, type = "pearson")),
+    aes(x = eta,y = pearson)) +
+    geom_point() +
+    theme_bw()
+qqnorm(residuals(v_mod))
+qqline(residuals, col="red")
+ggplot(data.frame(eta = predict(v_mod, type="link"), pearson = residuals(v_mod, type = "pearson")),
+    aes(x = eta,y = pearson)) +
+    geom_point() +
+    theme_bw()
+infIndexPlot(v_mod, vars = "Cook")
+
+v_mod_log <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count)^2 + (Soil * b_count * v_count) + (1 | Pot), data = ventenata)
+
+residuals <- residuals(v_mod_log)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(v_mod_log, type="link"), pearson = residuals(v_mod_log, type = "pearson")),
+    aes(x = eta,y = pearson)) +
+    geom_point() +
+    theme_bw()
+qqnorm(residuals(v_mod_log))
+qqline(residuals, col="red")
+infIndexPlot(v_mod_log, vars = "Cook")
+```
+
+remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+ventenata <- ventenata[-outliers, ]
+```
+
+New model
+```{r}
+v_mod_log <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count)^2 + (Soil * b_count * v_count) + (1 | Pot), data = ventenata)
+
+
+residuals <- residuals(v_mod_log)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(v_mod_log, type="link"), pearson = residuals(v_mod_log, type = "pearson")),
+    aes(x = eta,y = pearson)) +
+    geom_point() +
+    theme_bw()
+qqnorm(residuals(v_mod_log))
+qqline(residuals, col="red")
+infIndexPlot(v_mod_log, vars = "Cook")
+
+
+summary(v_mod_log)
+Anova(v_mod_log, type = "II")
+
+v_mod_log <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count)^2 + (1 | Pot), data = ventenata)
+Anova(v_mod_log, type = "II")
+v_mod_log <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + (1 | Pot), data = ventenata)
+Anova(v_mod_log, type = "II")
+v_mod_log <- lmer(log(Biomass + 0.0001) ~ Soil + b_count + Soil * v_count + (1 | Pot), data = ventenata)
+Anova(v_mod_log, type = "II")
+v_mod_log <- lmer(log(Biomass + 0.0001) ~ Soil + b_count + v_count + (1 | Pot), data = ventenata)
+Anova(v_mod_log, type = "II")
+```
+
+##### final model
+```{r}
+v_mod_log <-  lmer(log(Biomass + 0.0001) ~ Soil + b_count + v_count + (1 | Pot), data = ventenata)
+summary(v_mod_log)
+Anova(v_mod_log, type = "II")
+```
+Each additional b plant decreases biomass by 15%
+```{r}
+1 - (exp(-0.16626))
+```
+Each additional v plant decreases biomass by 15%
+```{r}
+1 - (exp(-0.16626))
+```
+
+```{r}
+emmeans_output <- emmeans(v_mod_log, specs = ~Soil, type = "response")
+summary(emmeans_output)
+emmeans_output1 <- emmeans(v_mod_log, pairwise ~Soil)
+summary(emmeans_output1)
+cld(emmeans_output)
+```
+
+#### figures
+
+```{r}
+vv <- 
+  ggplot(ventenata, aes(y = log(Biomass + 0.0001), x = v_count, 
+                        group = Soil, fill = Soil, col = Soil)) +
+  geom_point(alpha = 0.25, aes(shape = Soil, color = Soil))+
+  geom_smooth(aes(linetype = Soil), 
+              linewidth = 1, fullrange = TRUE, method = lm)+
+  scale_color_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  scale_fill_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values=c("gray80", "gray80", "gray80"))+
+  scale_shape_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c(19, 15, 17))+
+  scale_linetype_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c("solid", "longdash", "dotdash"))+
+  xlim(0, 16)+
+#  coord_cartesian(ylim = c(0, 0.1))+
+  stat_summary(aes(group = Soil, col = Soil, shape = Soil), 
+              fun = mean, geom = 'point', size = 3.5)+
+  labs(x = expression(paste(italic("Ventenata dubia")," count")) , y =    
+           expression(paste(italic("Ventenata dubia")," per capita biomass (natural log)")))+
+  theme_light()+
+  theme(legend.position = "none")
+
+
+vb <- 
+  ggplot(ventenata, aes(y = log(Biomass + 0.0001), x = b_count, group = Soil, fill = Soil, col = Soil)) +
+   geom_point(alpha = 0.25, aes(shape = Soil, color = Soil))+
+  geom_smooth(aes(linetype = Soil), 
+              linewidth = 1, fullrange = TRUE, method = lm)+
+  scale_color_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  scale_fill_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values=c("gray80", "gray80", "gray80"))+
+  scale_shape_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c(19, 15, 17))+
+  scale_linetype_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c("solid", "longdash", "dotdash"))+
+  stat_summary(aes(group = Soil, col = Soil, shape = Soil), 
+              fun = mean, geom = 'point', size = 3.5)+
+  xlim(0, 16)+
+#  coord_cartesian(ylim = c(0, 0.1))+
+  labs(x = expression(paste(italic("Bromus tectorum")," count")) , y =    
+           expression(paste(italic("Ventenata dubia")," per capita biomass (natural log)")))+
+  theme_light()+
+  theme(legend.position = "none")
+
+
+
+my_labels <- c("Neutral", expression(paste(italic("B. tectorum"))), expression(paste(italic("V. dubia"))))
+
+vbox <- 
+  ggplot(ventenata, aes(y = Biomass, x = Soil, fill = Soil)) +
+  geom_boxplot()+
+  geom_jitter(show.legend = FALSE, shape = 19, 
+              position = position_jitter(0.25), alpha = 0.15)+
+  scale_x_discrete(labels = my_labels) +
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x = "Soil origin" , y =    
+           expression(paste(italic("Ventenata dubia")," per capita biomass (g)")))+
+  theme_light() + 
+  theme(legend.position = "none") 
+
+vbox
+
+
+ggarrange(vv, vb)
+
+```
+
+
+
+
+## cheatgrass 
+```{r}
+cheatgrass <- subset(psf_data, psf_data$Species == 'BRTE')
+
+cheatgrass <- subset(cheatgrass, cheatgrass$Phase == '1')
+cheatgrass$Phase <- as.numeric (cheatgrass$Phase)
+cheatgrass$Soil <- as.factor(cheatgrass$Soil)
+cheatgrass$b_count <- as.integer(cheatgrass$b_count)
+cheatgrass$v_count <- as.integer(cheatgrass$v_count)
+cheatgrass$Biomass <- as.numeric(cheatgrass$Biomass)
+
+
+cheatgrass$Soil <- factor(cheatgrass$Soil, levels = c("Native", "BRTE", "VEDU"))
+cheatgrass$Soil <- revalue(cheatgrass$Soil, c("Native" = "Neutral", "BRTE" = "Bromus tectorum", "VEDU" = "Ventenata dubia"))
+
+```
+
+
+```{r}
+b_mod <- lmer(Biomass ~ (Soil + b_count + v_count)^2 + Soil * b_count * v_count + (1 | Pot), data = cheatgrass)
+
+residuals <- residuals(b_mod)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(b_mod, type="link"), pearson = residuals(b_mod, type = "pearson")),
+    aes(x = eta,y = pearson)) +
+    geom_point() +
+    theme_bw()
+qqnorm(residuals(b_mod))
+qqline(residuals, col="red")
+infIndexPlot(b_mod, vars = "Cook")
+
+b_mod_log <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count)^2 + Soil * v_count + Soil * b_count + (1 | Pot), data = cheatgrass)
+
+residuals <- residuals(b_mod_log)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(b_mod_log, type="link"), pearson = residuals(b_mod_log, type = "pearson")),
+    aes(x = eta,y = pearson)) +
+    geom_point() +
+    theme_bw()
+qqnorm(residuals(b_mod_log))
+qqline(residuals, col="red")
+infIndexPlot(b_mod_log, vars = "Cook")
+```
+
+remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+cheatgrass <- cheatgrass[-outliers, ]
+```
+
+New Model
+```{r}
+b_mod_log <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count)^2 + Soil * v_count * b_count + (1 | Pot), data = cheatgrass)
+
+residuals <- residuals(b_mod_log)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(b_mod_log, type="link"), pearson = residuals(b_mod_log, type = "pearson")),
+    aes(x = eta,y = pearson)) +
+    geom_point() +
+    theme_bw()
+qqnorm(residuals(b_mod_log))
+qqline(residuals, col="red")
+infIndexPlot(b_mod_log, vars = "Cook")
+
+Anova(b_mod_log, type = "II")
+b_mod_log <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count)^2 + (1 | Pot), data = cheatgrass)
+Anova(b_mod_log, type = "II")
+b_mod_log <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + (1 | Pot), data = cheatgrass)
+Anova(b_mod_log, type = "II")
+
+```
+
+
+#### final model
+```{r}
+b_mod_log <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + (1 | Pot), data = cheatgrass)
+summary(b_mod_log)
+Anova(b_mod_log, type = "II")
+```
+In the neutral soil each additional b plant decreases biomass by 15%
+```{r}
+1 - (exp(-0.160372))
+```
+In the b soil each additional b plant decreases biomass by 11% (the effect is weaker)
+```{r}
+1 - exp(-0.16037 + 0.044525)
+```
+In the v soil each additional b plant decreases biomass by 13% (the effect is weaker) 
+```{r}
+1 - exp(-0.16037 + 0.015649)
+```
+
+In the reference soil (Neutral) each additional v plant decreases biomass by 3%
+```{r}
+1 - (exp(-0.032026))
+```
+In the b soil each additional v plant decreases biomass by 3% (the effect is weaker)
+```{r}
+1 - exp(-0.032026 + 0.002183)
+```
+In the v soil each additional v plant decreases biomass by 9% (the effect is stronger)
+```{r}
+1 - exp(-0.032026 + -0.061461)
+```
+
+
+```{r}
+emmeans_output <- emmeans(b_mod_log, 
+                          specs = ~Soil, 
+                          type = "response")
+summary(emmeans_output)
+
+emmeans_output1 <- emmeans(b_mod_log, pairwise ~Soil, type = "response")
+summary(emmeans_output1)
+library(multcomp)
+
+cld(emmeans_output1)
+```
+
+#### figures
+```{r}
+
+bb <- 
+  ggplot(cheatgrass, aes(y = log(Biomass + 0.00001), x = b_count, group = Soil, fill = Soil, col = Soil)) +
+  geom_point(alpha = 0.25, aes(shape = Soil, color = Soil))+
+  geom_smooth(aes(linetype = Soil), 
+              linewidth = 1, fullrange = TRUE, method = lm)+
+  scale_color_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  scale_fill_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values=c("gray80", "gray80", "gray80"))+
+  scale_shape_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c(19, 15, 17))+
+  scale_linetype_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c("solid", "longdash", "dotdash"))+
+  stat_summary(aes(group = Soil, col = Soil, shape = Soil), 
+              fun = mean, geom = 'point', size = 3.5)+
+  xlim(0, 16)+
+ # coord_cartesian(ylim = c(0, 0.6))+
+  labs(x = expression(paste(italic("Bromus tectorum")," count")) , y =    
+           expression(paste(italic("Bromus tectorum")," per capita biomass (natural log)")))+
+  theme_light()+
+  theme(legend.position = "none")
+
+
+bv <- 
+  ggplot(cheatgrass, aes(y = log(Biomass + 0.00001), x = v_count, group = Soil, fill = Soil, col = Soil)) +
+   geom_point(alpha = 0.25, aes(shape = Soil, color = Soil))+
+  geom_smooth(aes(linetype = Soil), 
+              linewidth = 1, fullrange = TRUE, method = lm)+
+  scale_color_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  scale_fill_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values=c("gray80", "gray80", "gray80"))+
+  scale_shape_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c(19, 15, 17))+
+  scale_linetype_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c("solid", "longdash", "dotdash"))+
+  stat_summary(aes(group = Soil, col = Soil, shape = Soil), 
+              fun = mean, geom = 'point', size = 3.5)+
+  xlim(0, 16)+
+ # coord_cartesian(ylim = c(0, 0.6))+
+  labs(x = expression(paste(italic("Ventenata dubia")," count")) , y =    
+           expression(paste(italic("Bromus tectorum")," per capita biomass (natural log)")))+
+  theme_light()+
+  theme(legend.position = "none")
+
+
+
+bbox <- ggplot(cheatgrass, aes(y = Biomass, 
+                               x = Soil, fill = Soil)) +
+  geom_boxplot()+
+  geom_jitter(show.legend = FALSE, shape = 19, 
+              position = position_jitter(0.25), alpha = 0.1)+
+  scale_x_discrete(labels = my_labels) +
+ # ylim(0, 1) +
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x = "Soil origin" , y =    
+           expression(paste(italic("Bromus tectorum")," per capita biomass (g)")))+
+  theme_light() + 
+  theme(legend.position = "none") 
+
+
+vbox <- 
+  ggplot(ventenata, aes(y = Biomass, x = Soil, fill = Soil)) +
+  geom_boxplot()+
+  geom_jitter(show.legend = FALSE, shape = 19, 
+              position = position_jitter(0.25), alpha = 0.1)+
+  scale_x_discrete(labels = my_labels) +
+ # ylim( 0, 1) +
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x = "Soil origin" , y =    
+           expression(paste(italic("Ventenata dubia")," per capita biomass (g)")))+
+  theme_light() + 
+  theme(legend.position = "none") 
+
+#ggarrange(bbox,vbox)
+
+
+
+
+
+
+
+
+ggarrange(bb, bv)
+```
+
+
+
+
+## Phase 2
+repeat of previous with no modifications based on previous phase
+
+## ventenata 
+```{r}
+psf_data <- read_csv("psf.data.24.csv")
+psf_data <- as.data.frame(psf_data)
+psf_data$Pot <- as.factor(psf_data$Pot)
+psf_data$Biomass <- as.numeric(psf_data$Biomass)
+phase2 <- subset(psf_data, psf_data$Phase == '2')
+phase2$Pot <- as.factor(phase2$Pot)
+phase2$Biomass <- as.numeric(phase2$Biomass)
+# Extract Phase 1 biomass per pot
+
+phase1_biomass <- psf_data %>%
+  filter(Phase == 1) %>%   # Keep only Phase 1 data
+  dplyr:: select(Pot, Biomass) %>%  # Keep pot ID and biomass
+  rename(phase1_biomass = Biomass) # Rename for clarity
+ 
+phase2 <- phase2 %>%
+  left_join(phase1_biomass, by = "Pot")  # Merge Phase 1 biomass into Phase 2 data
+
+ventenata2 <- subset(phase2, phase2$Species == 'VEDU')
+ventenata2 <- na.omit(ventenata2)
+
+ventenata2$Phase <- as.numeric (ventenata2$Phase)
+ventenata2$Soil <- as.factor(ventenata2$Soil)
+ventenata2$b_count <- as.integer(ventenata2$b_count)
+ventenata2$v_count <- as.integer(ventenata2$v_count)
+ventenata2$Biomass <- as.numeric(ventenata2$Biomass)
+#ventenata2$phase1_biomass <- as.numeric(ventenata2$phase1_biomass)
+ventenata2$Soil <- factor(ventenata2$Soil, levels = c("Native", "BRTE", "VEDU"))
+ventenata2$Soil <- revalue(ventenata2$Soil, c("Native" = "Neutral", "BRTE" = "Bromus tectorum", "VEDU" = "Ventenata dubia"))
+```
+
+
+```{r}
+# Fit the model
+v_mod2 <- lmer(Biomass ~ (Soil + b_count + v_count + phase1_biomass)^2 + (Soil * b_count * v_count) + (1|Pot), data = phase2)
+
+residuals <- residuals(v_mod2)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(v_mod2, type="link"), 
+                  pearson = residuals(v_mod2, type = "pearson")),
+       aes(x = eta,y = pearson)) +
+       geom_point() +
+       theme_bw()
+qqnorm(residuals)
+qqline(residuals, col="red")
+infIndexPlot(v_mod2, vars = "Cook")
+
+v_mod_log2 <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count + phase1_biomass)^2 + (Soil * b_count * v_count) + (1 | Pot), data = ventenata2)
+
+residuals <- residuals(v_mod_log2)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(v_mod_log2, type="link"), 
+                  pearson = residuals(v_mod_log2, type = "pearson")),
+       aes(x = eta,y = pearson)) +
+       geom_point() +
+       theme_bw()
+qqnorm(residuals)
+qqline(residuals, col="red")
+infIndexPlot(v_mod_log2, vars = "Cook")
+```
+
+remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+ventenata2 <- ventenata2[-outliers, ]
+```
+
+New Model
+```{r}
+v_mod_log2 <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count + phase1_biomass)^2 + (Soil * b_count * v_count) + (1 | Pot), data = ventenata2)
+
+residuals <- residuals(v_mod_log2)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(v_mod_log2, type="link"), 
+                  pearson = residuals(v_mod_log2, type = "pearson")),
+       aes(x = eta,y = pearson)) +
+       geom_point() +
+       theme_bw()
+qqnorm(residuals)
+qqline(residuals, col="red")
+infIndexPlot(v_mod_log2, vars = "Cook")
+
+Anova(v_mod_log2, type = "II")
+v_mod_log2 <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count + phase1_biomass)^2 + (1 | Pot), data = ventenata2)
+Anova(v_mod_log2, type = "II")
+v_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + b_count * v_count + phase1_biomass * b_count + phase1_biomass * v_count + (1 | Pot), data = ventenata2)
+Anova(v_mod_log2, type = "II")
+v_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + b_count * v_count + phase1_biomass * v_count + (1 | Pot), data = ventenata2)
+Anova(v_mod_log2, type = "II")
+v_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + b_count * v_count + phase1_biomass + (1 | Pot), data = ventenata2)
+Anova(v_mod_log2, type = "II")
+```
+
+
+#### final model
+```{r}
+v_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + b_count * v_count + phase1_biomass + (1 | Pot), data = ventenata2)
+summary(v_mod_log2)
+Anova(v_mod_log2, type = "II")
+```
+
+In the neutral soil each additional b plant decreases biomass by 42%
+```{r}
+1 - (exp(-0.5503))
+```
+In the b soil each additional b plant decreases biomass by 18% (the effect is weaker)
+```{r}
+1 - exp(-0.5503 + 0.3514)
+```
+In the v soil each additional b plant decreases biomass by 32% (the effect is weaker) 
+```{r}
+1 - exp(-0.5503 + 0.1716)
+```
+
+In the reference soil (Neutral) each additional v plant decreases biomass by 2%
+```{r}
+1 - (exp(-.02338))
+```
+In the b soil each additional v plant decreases biomass by 16% (the effect is stronger)
+```{r}
+1 - exp(-.02338 + -0.1539)
+```
+In the v soil each additional v plant decreases biomass by <1% (the effect is weaker)
+```{r}
+1 - exp(-.02338 + 0.008185 )
+```
+
+for the presence of 1 b plant every increase in a v plant?
+```{r}
+1 - exp(0.03359)
+```
+
+
+```{r}
+emmeans_output <- emmeans(v_mod_log2, specs = ~Soil, type = "response", pbkrtest.limit = 4618)
+summary(emmeans_output)
+emmeans_output1 <- emmeans(v_mod_log2, pairwise ~Soil, pbkrtest.limit = 4618)
+summary(emmeans_output1)
+cld(emmeans_output1)
+```
+
+##### figures
+```{r}
+
+v2 <- ggplot(ventenata2, aes(y = log(Biomass + 0.0001), x = b_count, group = Soil, fill = Soil, col = Soil)) +
+  geom_point(alpha = 0.25, aes(shape = Soil, color = Soil))+
+  geom_smooth(aes(linetype = Soil), 
+              linewidth = 1, fullrange = TRUE, method = lm)+
+  scale_color_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  scale_fill_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values=c("gray80", "gray80", "gray80"))+
+  scale_shape_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c(19, 15, 17))+
+  scale_linetype_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c("solid", "longdash", "dotdash"))+
+  xlim(0, 16)+
+#  coord_cartesian(ylim = c(0, 0.1))+
+  stat_summary(aes(group = Soil, col = Soil, shape = Soil), 
+              fun = mean, geom = 'point', size = 3.5)+
+  labs(x = expression(paste(italic("Bromus tectorum")," count")) , y =    
+           expression(paste(italic("Ventenata dubia")," per capita biomass (natural log)")))+
+  theme_light()+
+  theme(legend.position = "none")
+
+
+v3 <- ggplot(ventenata2, aes(y = log(Biomass + 0.0001), x = v_count, group = Soil, fill = Soil, col = Soil)) +
+  geom_point(alpha = 0.25, aes(shape = Soil, color = Soil))+
+  geom_smooth(aes(linetype = Soil), 
+              linewidth = 1, fullrange = TRUE, method = lm)+
+  scale_color_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  scale_fill_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values=c("gray80", "gray80", "gray80"))+
+  scale_shape_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c(19, 15, 17))+
+  scale_linetype_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c("solid", "longdash", "dotdash"))+
+  xlim(0, 16)+
+ # coord_cartesian(ylim = c(0, 0.1))+
+  stat_summary(aes(group = Soil, col = Soil, shape = Soil), 
+              fun = mean, geom = 'point', size = 3.5)+
+  labs(x = expression(paste(italic("Ventenata dubia")," count")) , y =    
+           expression(paste(italic("Ventenata dubia")," per capita biomass (natural log)")))+
+  theme_light()+
+  theme(legend.position = "none")
+
+
+
+ggplot(ventenata2, aes(y = Biomass, x = Soil, fill = Soil)) +
+  geom_boxplot()+
+  geom_jitter(show.legend = FALSE, shape = 19, 
+              position = position_jitter(0.25), alpha = 0.15)+
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x="",y="biomass :)")+
+  theme_classic()
+
+ggarrange(v3, v2)
+```
+
+## cheatgrass
+
+```{r}
+phase2 <- subset(psf_data, psf_data$Phase == '2')
+# Extract Phase 1 biomass per pot
+
+phase1_biomass <- psf_data %>%
+  filter(Phase == 1) %>%   # Keep only Phase 1 data
+  dplyr :: select(Pot, Biomass) %>% # Keep pot ID and biomass
+  rename(phase1_biomass = Biomass) # Rename for clarity
+
+phase2 <- phase2 %>%
+  left_join(phase1_biomass, by = "Pot")  # Merge Phase 1 biomass into Phase 2 data
+
+
+
+
+cheatgrass2 <- subset(phase2, phase2$Species == 'BRTE')
+
+cheatgrass2 <- subset(cheatgrass2, cheatgrass2$Phase == '2')
+cheatgrass2$Phase <- as.numeric (cheatgrass2$Phase)
+cheatgrass2$Soil <- as.factor(cheatgrass2$Soil)
+cheatgrass2$b_count <- as.integer(cheatgrass2$b_count)
+cheatgrass2$v_count <- as.integer(cheatgrass2$v_count)
+cheatgrass2$Biomass <- as.numeric(cheatgrass2$Biomass)
+#cheatgrass2$phase1_biomass <- as.numeric(cheatgrass2$phase1_biomass)
+cheatgrass2$Soil <- factor(cheatgrass2$Soil, levels = c("Native", "BRTE", "VEDU"))
+cheatgrass2$Soil <- revalue(cheatgrass2$Soil, c("Native" = "Neutral", "BRTE" = "Bromus tectorum", "VEDU" = "Ventenata dubia"))
+
+cheatgrass2 <- na.omit(cheatgrass2)
+
+```
+
+
+```{r}
+b_mod2 <- lmer(Biomass ~ (Soil + b_count + v_count + phase1_biomass)^2 + (Soil * b_count * v_count) + (1 | Pot), data = cheatgrass2)
+
+residuals <- residuals(b_mod2)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(b_mod2, type="link"), 
+                  pearson = residuals(b_mod2, type = "pearson")),
+       aes(x = eta,y = pearson)) +
+       geom_point() +
+       theme_bw()
+qqnorm(residuals)
+qqline(residuals, col="red")
+infIndexPlot(b_mod2, vars = "Cook")
+
+b_mod_log2 <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count + phase1_biomass)^2 + (Soil * b_count * v_count) + (1 | Pot), data = cheatgrass2)
+
+residuals <- residuals(b_mod_log2)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(b_mod_log2, type="link"), 
+                  pearson = residuals(b_mod_log2, type = "pearson")),
+       aes(x = eta,y = pearson)) +
+       geom_point() +
+       theme_bw()
+qqnorm(residuals)
+qqline(residuals, col="red")
+infIndexPlot(b_mod_log2, vars = "Cook")
+```
+
+remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+cheatgrass2 <- cheatgrass2[-outliers, ]
+```
+
+New Model
+```{r}
+b_mod_log2 <- lmer(log(Biomass + 0.0001) ~ (Soil + b_count + v_count + phase1_biomass)^2 + (Soil * b_count * v_count) + (1 | Pot), data = cheatgrass2)
+
+residuals <- residuals(b_mod_log2)
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+ggplot(data.frame(eta = predict(b_mod_log2, type="link"), 
+                  pearson = residuals(b_mod_log2, type = "pearson")),
+       aes(x = eta,y = pearson)) +
+       geom_point() +
+       theme_bw()
+qqnorm(residuals)
+qqline(residuals, col="red")
+infIndexPlot(b_mod_log2, vars = "Cook")
+
+Anova(b_mod_log2, type = "II")
+b_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + Soil * phase1_biomass + b_count * v_count + phase1_biomass * v_count + (Soil * b_count * v_count) + (1 | Pot), data = cheatgrass2)
+Anova(b_mod_log2, type = "II")
+b_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + Soil * phase1_biomass + b_count * v_count + (Soil * b_count * v_count)  + (1 | Pot), data = cheatgrass2)
+Anova(b_mod_log2, type = "II")
+b_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + Soil * v_count + b_count * v_count +  phase1_biomass + (Soil * b_count * v_count) + (1 | Pot), data = cheatgrass2)
+Anova(b_mod_log2, type = "II")
+b_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + b_count * v_count + phase1_biomass + (Soil * b_count * v_count) + (1 | Pot), data = cheatgrass2)
+Anova(b_mod_log2, type = "II")
+```
+
+
+#### final model
+```{r}
+b_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + b_count * v_count + phase1_biomass + (Soil * b_count * v_count) + (1 | Pot), data = cheatgrass2)
+summary(b_mod_log2)
+Anova(b_mod_log2, type = "II")
+```
+
+In the neutral soil each additional b plant decreases biomass by 22%
+```{r}
+1 - (exp(-0.2458)) 
+```
+In the b soil each additional b plant decreases biomass by <1% (the effect is weaker)
+```{r}
+1- exp(-0.2458 + 0.2414)
+```
+In the v soil each additional b plant decreases biomass by 14% (the effect is weaker) 
+```{r}
+1 - exp(-0.2458 + 0.09509)
+```
+
+When controlling for the soil type, each additional v plant decreased biomass by 14%
+```{r}
+1 - exp(-0.1495)
+```
+
+In the reference soil (Neutral) bcount:vcount 
+The negative impact of a competitor was limited when the other species was present
+```{r}
+1 - (exp(0.02179))
+```
+
+However, the three way interaction tells us that in B tectorum soil the interaction between b_count and v_count is more negative than in Neutral soil, where there was an added 3.7% decrease in biomass (relative to neutral soil) 
+```{r}
+1 - exp(-0.03787)
+```
+In the V dubia soil, the interaction is not different from Neutral 
+
+
+```{r}
+emmeans_output <- emmeans(b_mod_log2, specs = ~Soil, type = "response", pbkrtest.limit = 5730)
+summary(emmeans_output)
+emmeans_output1 <- emmeans(b_mod_log2, pairwise ~Soil, pbkrtest.limit = 5730)
+summary(emmeans_output1)
+cld(emmeans_output)
+```
+
+
+### figures
+```{r}
+b2<- ggplot(cheatgrass2, aes(y = log(Biomass + 0.0001), x = b_count, group = Soil, fill = Soil, col = Soil)) +
+  geom_point(alpha = 0.25, aes(shape = Soil, color = Soil))+
+  geom_smooth(aes(linetype = Soil), 
+              linewidth = 1, fullrange = TRUE, method = lm)+
+  scale_color_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  scale_fill_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values=c("gray80", "gray80", "gray80"))+
+  scale_shape_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c(19, 15, 17))+
+  scale_linetype_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c("solid", "longdash", "dotdash"))+
+  stat_summary(aes(group = Soil, col = Soil, shape = Soil), 
+              fun = mean, geom = 'point', size = 3.5)+
+  xlim(0, 16)+
+  #coord_cartesian(ylim = c(0, 0.6))+
+  labs(x = expression(paste(italic("Bromus tectorum")," count")) , y =    
+           expression(paste(italic("Bromus tectorum")," per capita biomass (natural log)")))+
+  theme_light()+
+  theme(legend.position = "none")
+
+b3 <- ggplot(cheatgrass2, aes(y = log(Biomass + 0.0001), x = v_count, group = Soil, fill = Soil, col = Soil)) +
+  geom_point(alpha = 0.25, aes(shape = Soil, color = Soil))+
+  geom_smooth(aes(linetype = Soil), 
+              linewidth = 1, fullrange = TRUE, method = lm)+
+  scale_color_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  scale_fill_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                     values=c("gray80", "gray80", "gray80"))+
+  scale_shape_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                        values=c(19, 15, 17))+
+ # scale_linetype_manual(breaks = c( "Neutral", "Bromus tectorum", "Ventenata dubia"),
+                 #       values=c("solid", "longdash", "dotdash"))+
+  stat_summary(aes(group = Soil, col = Soil, shape = Soil), 
+              fun = mean, geom = 'point', size = 3.5)+
+  xlim(0, 16)+
+  #coord_cartesian(ylim = c(0, 0.6))+
+  labs(x = expression(paste(italic("Ventenata dubia")," count")) , y =    
+           expression(paste(italic("Bromus tectorum")," per capita biomass (natural log)")))+
+  theme_light()+
+  theme(legend.position = "none")
+
+
+ggplot(cheatgrass2, aes(y = Biomass, x = Soil, fill = Soil)) +
+  geom_boxplot()+
+  geom_jitter(show.legend = FALSE, shape = 19, 
+              position = position_jitter(0.25), alpha = 0.15)+
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x="",y="biomass :)")+
+  theme_classic()
+
+
+ggarrange(b2, b3)
+```
+
+
+
+
+```{r}
+b_mod_log2 <- lmer(log(Biomass + 0.0001) ~ Soil * b_count + b_count * v_count + phase1_biomass + (Soil * b_count * v_count) + (1 | Pot), data = cheatgrass2)
+#library(dplyr)
+#library(tidyr)
+
+newdata <- expand.grid(
+  b_count = seq(min(cheatgrass2$b_count), max(cheatgrass2$b_count), length.out = 30),
+  v_count = seq(min(cheatgrass2$v_count), max(cheatgrass2$v_count), length.out = 30),
+  Soil = c("Neutral", "Bromus tectorum", "Ventenata dubia")
+)
+
+newdata$log_biomass_pred <- predict(b_mod_log2, newdata = newdata, re.form = NA)
+newdata$biomass_pred <- exp(newdata$log_biomass_pred)  # back-transform
+```
+
+
+
+
+```{r}
+# phase 1
+bbox <- ggplot(cheatgrass, aes(y = Biomass, 
+                               x = Soil, fill = Soil)) +
+  geom_boxplot()+
+ # geom_jitter(show.legend = FALSE, shape = 19, 
+  #            position = position_jitter(0.25), alpha = 0.1)+
+  scale_x_discrete(labels = my_labels) +
+ # ylim(0, 1) +
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x = "Soil origin" , y =    
+           expression(paste(italic("Bromus tectorum")," per capita biomass (g)")))+
+  theme_light() + 
+  theme(legend.position = "none") 
+
+
+vbox <- 
+  ggplot(ventenata, aes(y = Biomass, x = Soil, fill = Soil)) +
+  geom_boxplot()+
+#  geom_jitter(show.legend = FALSE, shape = 19, 
+ #             position = position_jitter(0.25), alpha = 0.1)+
+  scale_x_discrete(labels = my_labels) +
+ # ylim( 0, 1) +
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x = "Soil origin" , y =    
+           expression(paste(italic("Ventenata dubia")," per capita biomass (g)")))+
+  theme_light() + 
+  theme(legend.position = "none") 
+
+ggarrange(bbox,vbox)
+
+# phase 2
+
+bbox2 <- ggplot(cheatgrass2, aes(y = Biomass, 
+                               x = Soil, fill = Soil)) +
+  geom_boxplot()+
+ # geom_jitter(show.legend = FALSE, shape = 19, 
+  #            position = position_jitter(0.25), alpha = 0.1)+
+  scale_x_discrete(labels = my_labels) +
+ # ylim(0, 1) +
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x = "Soil origin" , y =    
+           expression(paste(italic("Bromus tectorum")," per capita biomass (g)")))+
+  theme_light() + 
+  theme(legend.position = "none") 
+
+
+vbox2 <- 
+  ggplot(ventenata2, aes(y = Biomass, x = Soil, fill = Soil)) +
+  geom_boxplot()+
+#  geom_jitter(show.legend = FALSE, shape = 19, 
+ #             position = position_jitter(0.25), alpha = 0.1)+
+  scale_x_discrete(labels = my_labels) +
+ # ylim( 0, 1) +
+  scale_fill_manual(values = c("burlywood3", "hotpink4", "goldenrod1"))+
+  labs(x = "Soil origin" , y =    
+           expression(paste(italic("Ventenata dubia")," per capita biomass (g)")))+
+  theme_light() + 
+  theme(legend.position = "none") 
+
+ggarrange(bbox2,vbox2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

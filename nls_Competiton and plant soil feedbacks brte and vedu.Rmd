@@ -1,0 +1,3160 @@
+---
+title: "Competition and Plant Soil Feedbacks of Bromus tectorum and Ventenata dubia"
+author: ""
+date: "2025-01-30"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+ set up
+
+```{r}
+library(ggplot2)
+library(readr)
+library(minpack.lm)
+library(ggpubr)
+library(ggtext)
+library(dplyr)
+
+
+psf_data <- read_csv("psf.data.24.csv")
+psf_data <- as.data.frame(psf_data)
+
+```
+
+## equations
+
+monoculture 
+
+$$ w = w_{m} (1 + \alpha * N)^{-b} $$
+
+bicultures 
+
+Ventenata dubia
+$$ w_V = w_{mV} ( 1 + \beta_{V}(N_{V}+ \alpha_{BV}N_B))^{-b_{V}} $$
+
+Bromus tectorum
+$$ w_B = w_{mB} ( 1 + \beta_{B}(N_{B}+ \alpha_{VB}N_V))^{-b_{B}} $$
+
+Equation functions (including log versions)
+```{r}
+equ1 <- function (wm, alpha, N, b) {
+  return((wm * (1 + alpha * N))^-(b))
+}
+
+equ1_log <- function(wm, alpha, N, b) {
+  return(-b * (log(wm) + log(1 + alpha * N)))
+}
+
+equ2 <- function (wm, alpha, N, bb) {
+  return((wm * (1 + alpha * N))^-(bb))
+}
+
+equ2_log <- function(wm, alpha, N, b) {
+  return(-b * (log(wm) + log(1 + alpha * N)))
+}
+
+# ventenata
+equ3 <- function (wmv, betav, nv, alphabv, nb, b) {
+  return(( wmv * (1 + betav * (nv + alphabv * nb))^(-b)))
+}
+
+equ3_log <- function(wmv, betav, nv, alphabv, nb, b) {
+  return(log(wmv) - b * log(1 + betav * (nv + alphabv * nb)))
+}
+
+# cheatgrass
+equ4 <- function (wmb, betab, nb, alphavb, nv, b) {
+  return(( wmb * (1 + betab * (nb + alphavb * nv))^(-b)))
+}
+
+equ4_log <- function(wmb, betab, nv, alphavb, nb, b) {
+  return(log(wmb) - b * log(1 + betab * (nb + alphavb * nv)))
+}
+```
+
+
+
+# PHASE 1
+
+# Ventenata dubia
+
+### Neutral Soil
+
+##### Monoculture increasing density
+
+
+Set up
+```{r}
+vedu <- subset(psf_data, Species=='VEDU')
+vedu1 <- subset(vedu, Phase == '1')
+vedu1N <- subset(vedu1, Soil == 'Native')
+
+
+vedualone1N <- subset(vedu1N, Vent_pct == '100')
+
+
+wm <- subset(vedualone1N, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- vedualone1N$v_count
+b <- 1
+rm(alpha)
+
+fit <- nls(Biomass ~ equ1(wm, alpha, v_count, b), data = vedualone1N, 
+                   start = list(alpha = 0.1)) 
+
+summary(fit)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedualone1N <- vedualone1N[-outliers, ]
+max(vedualone1N$Biomass)
+mean(vedualone1N$Biomass)
+```
+
+Log transform
+```{r}
+summary(vedualone1N$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * vedualone1N$v_count)   
+
+
+filtered_data1n <- vedualone1N %>%
+  filter(Biomass > 0, (1 + 0.1 * vedualone1N$v_count) > 0)  
+
+# log transformation
+filtered_data1n$log_Biomass <- log(filtered_data1n$Biomass)
+
+b <- 1
+
+# Re-fit the log-transformed model
+fit_log1n <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data1n, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log1n)
+
+sum <- summary(fit_log1n)
+
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1n)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 220.00  
+
+
+# Re-fit the log-transformed model
+fit_log1n <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data1n, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log1n)
+
+confint(fit_log1n)
+
+```
+
+
+#### Biculture
+
+```{r}
+wmv <- max(vedu1N$Biomass)
+b <- 0.96699    
+
+
+
+fit_oldV1N <- nls(Biomass ~ equ3(wmv, betav, v_count, alphabv, b_count, b), data = vedu1N, 
+                start = list(betav = 0.1, alphabv = 0.1))
+
+summary(fit_oldV1N)
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_oldV1N)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedu1N <- vedu1N[-outliers, ]
+```
+
+
+Log transform
+```{r}
+
+summary(vedu1N$Biomass)  # Ensure all values are > 0
+
+
+summary(1 + 0.1 * vedu1N$v_count)  
+
+
+
+b <- 0.96699
+ 
+filtered_datav2n <- vedu1N %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (v_count + 0.1 * b_count) > 0)  # Adjust the initial values of betav and alphabv 
+filtered_datav2n$b_count <- as.numeric(filtered_datav2n$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_datav2n$log_Biomass <- log(filtered_datav2n$Biomass)
+mean(filtered_datav2n$Biomass)
+```
+
+#### Final Model
+Log per capita biomass (Ventenata dubia)
+```{r}
+# Fit the log-transformed model
+fit_logv2n <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2n, 
+               start = list(betav = 1, alphabv = 0.1))
+
+# Check the fit
+summary(fit_logv2n)
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_logv2n)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+
+### Ventenata dubia Soil
+
+##### Monoculture increasing density
+
+Set up
+```{r}
+vedu1 <- subset(vedu, Phase == '1')
+vedu1V <- subset(vedu1, Soil == 'VEDU')
+vedualone1V <- subset(vedu1V, Vent_pct == '100')
+
+
+wm <- subset(vedualone1V, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- vedualone1V$v_count
+b <- 1
+rm(alpha)
+
+fit1VV <- nls(Biomass ~ equ1(wm, alpha, v_count, b), data = vedualone1V, 
+                   start = list(alpha = 0.1)) 
+
+summary(fit1VV)
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit1VV)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedualone1V <- vedualone1V[-outliers, ]
+
+max(vedualone1V$Biomass)
+mean(vedualone1V$Biomass)
+```
+
+
+Log transform
+
+```{r}
+
+summary(vedualone1V$Biomass)  # Ensure all values are > 0
+
+
+summary(1 + 0.1 * vedualone1V$v_count)  
+
+
+filtered_data1v <- vedualone1V %>%
+  filter(Biomass > 0, (1 + 0.1 * vedualone1V$v_count) > 0) 
+
+# log transformation
+filtered_data1v$log_Biomass <- log(filtered_data1v$Biomass)
+
+b <- 1
+
+# Re-fit the log-transformed model
+fit_log1v <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data1v, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log1v)
+
+sum <- summary(fit_log1v)
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 150.40      
+
+
+# Re-fit the log-transformed model
+fit_log1v <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data1v, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log1v)
+
+confint(fit_log1v)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log1v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+#### Biculture 
+
+
+```{r}
+wmv <- max(vedu1V$Biomass)
+b <- 0.9371     
+
+
+fit_old1VV <- nls(Biomass ~ equ3(wmv, betav, v_count, alphabv, b_count, b), data = vedu1V, 
+                start = list(betav = 0.1, alphabv = 0.1))
+
+
+summary(fit_old1VV)
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old1VV)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old1VV)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedu1V <- vedu1V[-outliers, ]
+```
+
+Log transform
+
+```{r}
+
+summary(vedu1V$Biomass)  # all values are > 0
+
+
+summary(1 + 0.1 * vedu1V$v_count)
+
+
+
+b <- 0.9371
+
+filtered_datav2v <- vedu1V %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (v_count + 0.1 * b_count) > 0)  
+filtered_datav2v$b_count <- as.numeric(filtered_datav2v$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_datav2v$log_Biomass <- log(filtered_datav2v$Biomass)
+mean(filtered_datav2v$Biomass)
+```
+
+#### Final model
+
+Log per capita biomass (Ventenata dubia)
+```{r}
+fit_logv2v <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2v, 
+               start = list(betav = 0.1, alphabv = 0.1))
+
+# Check the fit
+summary(fit_logv2v)
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_logv2v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+
+### Bromus tectorum soil
+
+#### Monoculture increasing density
+```{r}
+vedu1 <- subset(vedu, Phase == '1')
+vedu1B <- subset(vedu1, Soil == 'BRTE')
+vedualone1B <- subset(vedu1B, Vent_pct == '100')
+
+
+wm <- subset(vedualone1B, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- vedualone1B$v_count
+b <- 1
+rm(alpha)
+
+fitalone1B <- nls(Biomass ~ equ1(wm, alpha, v_count, b), data = vedualone1B, 
+                   start = list(alpha = 0.1)) 
+
+summary(fitalone1B)
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fitalone1B)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedualone1B <- vedualone1B[-outliers, ]
+```
+
+Log transform
+```{r}
+
+summary(vedualone1B$Biomass) 
+
+
+summary(1 + 0.1 * vedualone1B$v_count) 
+
+
+filtered_data1vb <- vedualone1B %>%
+  filter(Biomass > 0, (1 + 0.1 * vedualone1B$v_count) > 0)  
+
+
+filtered_data1vb$log_Biomass <- log(filtered_data1vb$Biomass)
+
+b <- 1
+
+# Re-fit the log-transformed model
+fit_log1vb <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data1vb, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log1vb)
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1vb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 97.282      
+
+
+# Re-fit the log-transformed model
+fit_log1vb <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data1vb, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log1vb)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log1vb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+
+
+fitted_values <- fitted(fit_log1vb)
+# Create residuals vs fitted values plot
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+#### Biculture 
+
+```{r}
+wmv <- max(vedu1B$Biomass)
+b <-  0.94403
+alphabv <- 1
+rm(alphabv)
+rm(betav)
+
+
+fit_old1B <- nls(Biomass ~ equ3(wmv, betav, v_count, alphabv, b_count, b), data = vedu1B, 
+                start = list(betav = 0.1, alphabv = 0.1))
+
+summary(fit_old1B)
+
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old1B)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old1B)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedu1B <- vedu1B[-outliers, ]
+```
+
+
+Log transform
+```{r}
+
+summary(vedu1B$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * vedu1B$v_count)   
+
+
+
+b <- 0.94403
+ 
+filtered_datav2b <- vedu1B %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (v_count + 0.1 * b_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_datav2b$b_count <- as.numeric(filtered_datav2b$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_datav2b$log_Biomass <- log(filtered_datav2b$Biomass)
+mean(filtered_datav2b$Biomass)
+# Define the log-transformed model function
+
+```
+
+#### Final model
+Log per capita biomass (Ventenata dubia)
+```{r}
+
+# Fit the log-transformed model
+fit_logv2b <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2b, 
+               start = list(betav = 0.1, alphabv = 0.1))
+
+# Check the fit
+summary(fit_logv2b)
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_logv2b)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+
+# Bromus tectorum
+
+### Neutral soil
+
+#### Monoculture increasing density
+```{r}
+brte <- subset(psf_data, Species=='BRTE')
+brte1 <- subset(brte, Phase == '1')
+brte1N <- subset(brte1, Soil == 'Native')
+
+wmb <- max(brte1N$Biomass)
+
+brtealone1N <- subset(brte1N, Cheat_pct == '100')
+
+
+
+wm <- subset(brtealone1N, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- brtealone1N$b_count
+bb <- 1
+
+
+
+
+fitb1N <- nls(Biomass ~ equ2(wm, alphab, b_count, bb), data = brtealone1N, 
+                   start = list(alphab = 0.1)) 
+
+summary(fitb1N)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fitb1N)
+qqnorm(residuals)
+qqline(residuals, col="red")
+```
+
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brtealone1N <- brtealone1N[-outliers, ]
+
+```
+
+
+
+Log transform
+```{r}
+
+summary(brtealone1N$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brtealone1N$v_count)   
+
+
+filtered_data1NB <- brtealone1N %>%
+  filter(Biomass > 0, (1 + 0.1 * brtealone1N$b_count) > 0)   
+
+ 
+filtered_data1NB$log_Biomass <- log(filtered_data1NB$Biomass)
+
+b <- 1
+equ1_log <- function(wm, alpha, N, b) {
+  return(-b * (log(wm) + log(1 + alpha * N)))
+}
+# Re-fit the log-transformed model
+fit_log1nb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data1NB, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log1nb)
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1nb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 10.372    
+
+
+# Re-fit the log-transformed model
+fit_log1nb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data1NB, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log1nb)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log1nb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+
+
+fitted_values <- fitted(fit_log1nb)
+# Create residuals vs fitted values plot
+plot(fitted_values, residuals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values",
+     pch = 20, col = "blue")
+abline(h = 0, col = "red", lwd = 2)
+```
+
+
+#### Biculture
+```{r}
+rm(wmb)
+wmb <- max(brte1N$Biomass)
+b <- 0.96759
+
+fit_old1N <- nls(Biomass ~ equ4(wmb, betab, b_count, alphabv, v_count, b), data = brte1N, 
+                start = list(betab = 0.1, alphabv = 0.1))
+
+summary(fit_old1N)
+
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old1N)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old1N)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brte1N <- brte1N[-outliers, ]
+```
+
+Log transform
+```{r}
+
+summary(brte1N$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brte1N$b_count)   
+
+
+
+b <- 0.9812
+ 
+filtered_data1b <- brte1N %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (b_count + 0.1 * v_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_data1b$b_count <- as.numeric(filtered_data1b$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_data1b$log_Biomass <- log(filtered_data1b$Biomass)
+mean(filtered_data1b$Biomass)
+# Define the log-transformed model function
+
+```
+
+
+#### Final model
+Log per capita biomass (Bromus tectorum)
+```{r}
+b <- 0.9812
+# Fit the log-transformed model
+fit_log1bn <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data1b, 
+               start = list(betab = 0.1, alphavb = 0.1))
+
+# Check the fit
+summary(fit_log1bn)
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1bn)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+### Bromus tectorum soil
+
+#### Monoculture increasing density
+```{r}
+brte <- subset(psf_data, Species=='BRTE')
+brte1 <- subset(brte, Phase == '1')
+brte1B <- subset(brte1, Soil == 'BRTE')
+
+wmb <- max(brte1B$Biomass)
+
+
+brtealone1B <- subset(brte1B, Cheat_pct == '100')
+
+
+
+wm <- subset(brtealone1B, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- brtealone1B$b_count
+bb <- 1
+rm(alphab)
+rm(b)
+
+
+
+fitb1B <- nls(Biomass ~ equ2(wm, alphab, b_count, bb), data = brtealone1B, 
+                   start = list(alphab = 0.1)) 
+
+summary(fitb1B)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fitb1B)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brtealone1B <- brtealone1B[-outliers, ]
+
+wm <- mean(brtealone1B$Biomass)
+```
+
+Log transform
+```{r}
+
+summary(brtealone1B$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brtealone1B$v_count)   
+
+
+filtered_data1BB <- brtealone1B %>%
+  filter(Biomass > 0, (1 + 0.1 * brtealone1B$b_count) > 0)   
+
+ 
+filtered_data1BB$log_Biomass <- log(filtered_data1BB$Biomass)
+
+b <-1
+# Re-fit the log-transformed model
+fit_log1nb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data1BB, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log1nb)
+
+
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 16.8677
+
+
+# Re-fit the log-transformed model
+fit_log1bb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data1BB, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log1bb)
+
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log1bb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+#### Biculture
+```{r}
+rm(alphvb)
+wmb <- max(brte1B$Biomass)
+b <- 1.04507
+
+
+
+fit_old1B <- nls(Biomass ~ equ4(wmb, betab, b_count, alphavb, v_count, b), data = brte1B, 
+                start = list(betab = 0.1, alphavb = 0.1))
+
+summary(fit_old1B)
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_old1B)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brte1B <- brte1B[-outliers, ]
+```
+
+Log transform
+```{r}
+
+summary(brte1B$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brte1B$b_count)   
+
+
+
+b <- 1.04507
+ 
+filtered_data1b <- brte1B %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (b_count + 0.1 * v_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_data1b$b_count <- as.numeric(filtered_data1b$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_data1b$log_Biomass <- log(filtered_data1b$Biomass)
+mean(filtered_data1b$Biomass)
+# Define the log-transformed model function
+```
+
+#### Final model
+```{r}
+# Fit the log-transformed model
+
+b <- 1.04507
+fit_log1b <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data1b, 
+               start = list(betab = 0.1, alphavb = 0.1))
+
+# Check the fit
+summary(fit_log1b)
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1b)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+### Ventenata dubia soil
+
+#### Monoculture increasing density
+```{r}
+brte <- subset(psf_data, Species=='BRTE')
+brte2 <- subset(brte, Phase == '1')
+brte1V <- subset(brte1, Soil == 'VEDU')
+
+wmb <- max(brte1V$Biomass)
+
+
+brtealone1V <- subset(brte1V, Cheat_pct == '100')
+
+
+
+wm <- subset(brtealone1V, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- brtealone1V$b_count
+bb <- 1
+#rm(alphab)
+
+
+
+fitb1V <- nls(Biomass ~ equ2(wm, alphab, b_count, bb), data = brtealone1V, 
+                   start = list(alphab = 0.1)) 
+
+summary(fitb1V)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fitb1V)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brtealone1V <- brtealone1V[-outliers, ]
+wm <- subset(brtealone1V, Total_plants == '1')
+wm <- mean(wm$Biomass)
+```
+
+Log transform
+```{r}
+
+summary(brtealone1V$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brtealone1V$v_count)   
+
+
+filtered_data1Bv <- brtealone1V %>%
+  filter(Biomass > 0, (1 + 0.1 * brtealone1V$b_count) > 0)   
+
+ 
+filtered_data1Bv$log_Biomass <- log(filtered_data1Bv$Biomass)
+
+b <-1
+# Re-fit the log-transformed model
+fit_log1vb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data1Bv, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log1vb)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log1vb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <-  4.014
+
+
+# Re-fit the log-transformed model
+fit_log1vb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data1NB, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log1vb)
+
+
+```
+
+
+#### Biculture
+```{r}
+rm(wmb)
+wmb <- max(brte1V$Biomass)
+b <- 1.1174
+
+fit_old1V <- nls(Biomass ~ equ4(wmb, betab, b_count, alphabv, v_count, b), data = brte1V, 
+                start = list(betab = 0.1, alphabv = 0.1))
+
+summary(fit_old1V)
+
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old1V)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old1V)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brte1V <- brte1V[-outliers, ]
+```
+
+
+Log transform
+```{r}
+
+summary(brte1V$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brte1V$b_count)   
+
+
+
+b <- 1.1174
+ 
+filtered_data1v <- brte1V %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (b_count + 0.1 * v_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_data1v$b_count <- as.numeric(filtered_data1v$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_data1v$log_Biomass <- log(filtered_data1v$Biomass)
+mean(filtered_data1v$Biomass)
+# Define the log-transformed model function
+```
+
+#### Final model
+Log per capita biomass (Bromus tectorum)
+```{r}
+# Fit the log-transformed model
+b <- 1.1174
+fit_log1v <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data1v, 
+               start = list(betab = 0.1, alphavb = 0.1))
+
+# Check the fit
+summary(fit_log1v)
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+# PHASE 2
+
+## Ventenata dubia
+
+### Neutral Soil
+
+#### Monoculture increasing density
+```{r}
+vedu <- subset(psf_data, Species=='VEDU')
+vedu2 <- subset(vedu, Phase == '2')
+vedu2N <- subset(vedu2, Soil == 'Native')
+
+
+vedualone2N <- subset(vedu2N, Vent_pct == '100')
+
+
+wm <- subset(vedualone2N, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- vedualone2N$v_count
+b <- 1
+rm(alpha)
+
+fit <- nls(Biomass ~ equ1(wm, alpha, v_count, b), data = vedualone2N, 
+                   start = list(alpha = 0.1)) 
+
+summary(fit)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+ remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedualone2N <- vedualone2N[-outliers, ]
+max(vedualone2N$Biomass)
+mean(vedualone2N$Biomass)
+```
+
+Log transform
+```{r}
+summary(vedualone2N$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * vedualone2N$v_count)   
+
+
+filtered_data2n <- vedualone2N %>%
+  filter(Biomass > 0, (1 + 0.1 * vedualone2N$v_count) > 0)   
+
+ 
+filtered_data2n$log_Biomass <- log(filtered_data2n$Biomass)
+
+b <- 1
+
+# Re-fit the log-transformed model
+fit_log2n <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data2n, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log2n)
+
+sum <- summary(fit_log2n)
+
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log2n)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 1227.9
+
+# Re-fit the log-transformed model
+fit_log2n <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data2n, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log2n)
+
+confint(fit_log2n)
+
+```
+
+
+#### Biculture
+```{r}
+wmv <- max(vedu2N$Biomass)
+b <- 0.98091   
+
+
+
+fit_oldV2N <- nls(Biomass ~ equ3(wmv, betav, v_count, alphabv, b_count, b), data = vedu2N, 
+                start = list(betav = 0.1, alphabv = 0.1))
+
+summary(fit_oldV2N)
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_oldV2N)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedu2N <- vedu2N[-outliers, ]
+```
+
+
+Log transform
+```{r}
+summary(vedu2N$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * vedu2N$v_count)   
+
+
+
+b <- 0.98091
+ 
+filtered_datav2n <- vedu2N %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (v_count + 0.1 * b_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_datav2n$b_count <- as.numeric(filtered_datav2n$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_datav2n$log_Biomass <- log(filtered_datav2n$Biomass)
+mean(filtered_datav2n$Biomass)
+# Define the log-transformed model function
+
+```
+
+#### Final model
+```{r}
+# Fit the log-transformed model
+b <- 0.98091
+fit_logv2n <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2n, 
+               start = list(betav = 1, alphabv = 0.1))
+
+# Check the fit
+summary(fit_logv2v)
+
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_logv2v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+### Ventenata Soil
+
+#### Monoculture increasing density
+```{r}
+vedu2 <- subset(vedu, Phase == '2')
+vedu2V <- subset(vedu2, Soil == 'VEDU')
+vedualone2V <- subset(vedu2V, Vent_pct == '100')
+
+
+wm <- subset(vedualone2V, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- vedualone2V$v_count
+b <- 1
+rm(alpha)
+
+fit2V <- nls(Biomass ~ equ1(wm, alpha, v_count, b), data = vedualone2V, 
+                   start = list(alpha = 0.1)) 
+
+summary(fit2V)
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit2V)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedualone2V <- vedualone2V[-outliers, ]
+
+max(vedualone2V$Biomass)
+mean(vedualone2V$Biomass)
+```
+
+Log transform
+```{r}
+
+summary(vedualone2V$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * vedualone2V$v_count)   
+
+
+filtered_data2v <- vedualone2V %>%
+  filter(Biomass > 0, (1 + 0.1 * vedualone2V$v_count) > 0)   
+
+ 
+filtered_data2v$log_Biomass <- log(filtered_data2v$Biomass)
+
+b <- 1
+
+# Re-fit the log-transformed model
+fit_log2v <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data2v, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log2v)
+
+sum <- summary(fit_log2v)
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log2v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 346.75     
+
+
+# Re-fit the log-transformed model
+fit_log2v <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data2v, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log2v)
+
+confint(fit_log2v)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log2v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+#### Biculture 
+```{r}
+wmv <- max(vedu2V$Biomass)
+b <- 0.91750      
+
+
+fit_old2VV <- nls(Biomass ~ equ3(wmv, betav, v_count, alphabv, b_count, b), data = vedu2V, 
+                start = list(betav = 0.1, alphabv = 0.1))
+
+
+summary(fit_old2VV)
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old2VV)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old2VV)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedu2V <- vedu2V[-outliers, ]
+```
+
+
+
+
+Log transform
+```{r}
+summary(vedu2V$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * vedu2V$v_count)   
+
+
+
+b <-  0.91750  
+ 
+filtered_datav2v <- vedu2V %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (v_count + 0.1 * b_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_datav2v$b_count <- as.numeric(filtered_datav2v$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_datav2v$log_Biomass <- log(filtered_datav2v$Biomass)
+mean(filtered_datav2v$Biomass)
+# Define the log-transformed model function
+
+```
+
+#### Final model
+```{r}
+
+
+# Fit the log-transformed model
+b <-  0.91750  
+fit_logv2v <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2v, 
+               start = list(betav = 0.1, alphabv = 0.1))
+
+# Check the fit
+summary(fit_logv2v)
+
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_logv2v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+### Bromus tectorum soil
+#### Monoculture increasing density
+```{r}
+vedu2 <- subset(vedu, Phase == '2')
+vedu2B <- subset(vedu2, Soil == 'BRTE')
+vedualone2B <- subset(vedu2B, Vent_pct == '100')
+
+
+wm <- subset(vedualone2B, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- vedualone2B$v_count
+b <- 1
+rm(alpha)
+
+fitalone2B <- nls(Biomass ~ equ1(wm, alpha, v_count, b), data = vedualone2B, 
+                   start = list(alpha = 0.1)) 
+
+summary(fitalone2B)
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fitalone2B)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedualone2B <- vedualone2B[-outliers, ]
+```
+
+
+Log transform
+```{r}
+summary(vedualone2B$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * vedualone2B$v_count)   
+
+
+filtered_data2vb <- vedualone2B %>%
+  filter(Biomass > 0, (1 + 0.1 * vedualone2B$v_count) > 0)   
+
+ 
+filtered_data2vb$log_Biomass <- log(filtered_data2vb$Biomass)
+
+b <- 1
+
+# Re-fit the log-transformed model
+fit_log2vb <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data2vb, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log2vb)
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log2vb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 916.6      
+
+
+# Re-fit the log-transformed model
+fit_log2vb <- nls(log_Biomass ~ equ1_log(wm, alpha, v_count, b), 
+               data = filtered_data2vb, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log2vb)
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log2vb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+
+
+fitted_values <- fitted(fit_log2vb)
+# Create residuals vs fitted values plot
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+
+#### Biculture
+```{r}
+wmv <- max(vedu2B$Biomass)
+b <-  0.96376
+alphabv <- 1
+rm(alphabv)
+rm(betav)
+
+
+
+fit_old2B <- nls(Biomass ~ equ3(wmv, betav, v_count, alphabv, b_count, b), data = vedu2B, 
+                start = list(betav = 0.1, alphabv = 0.1))
+
+summary(fit_old2B)
+
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old2B)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old2B)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+vedu2B <- vedu2B[-outliers, ]
+```
+
+
+Log transform
+```{r}
+summary(vedu2B$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * vedu2B$v_count)   
+
+
+
+b <- 0.96376
+ 
+filtered_datav2b <- vedu2B %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (v_count + 0.1 * b_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_datav2b$b_count <- as.numeric(filtered_datav2b$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_datav2b$log_Biomass <- log(filtered_datav2b$Biomass)
+mean(filtered_datav2b$Biomass)
+# Define the log-transformed model function
+
+
+```
+
+#### Final model
+```{r}
+# Fit the log-transformed model
+b <- 0.96376
+fit_logv2b <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2b, 
+               start = list(betav = 0.1, alphabv = 0.1))
+
+# Check the fit
+summary(fit_logv2b)
+
+```
+
+```{r}
+residuals <- resid(fit_logv2b)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+# Bromus tectorum
+
+### Neutral Soil
+
+#### Monoculture increasing density
+```{r}
+brte <- subset(psf_data, Species=='BRTE')
+brte2 <- subset(brte, Phase == '2')
+brte2N <- subset(brte2, Soil == 'Native')
+
+wmb <- max(brte2N$Biomass)
+
+brtealone2N <- subset(brte2N, Cheat_pct == '100')
+
+
+
+wm <- subset(brtealone2N, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- brtealone2N$b_count
+bb <- 1
+
+
+
+
+fitb2N <- nls(Biomass ~ equ2(wm, alphab, b_count, bb), data = brtealone2N, 
+                   start = list(alphab = 0.1)) 
+
+summary(fitb2N)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fitb2N)
+qqnorm(residuals)
+qqline(residuals, col="red")
+```
+
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brtealone2N <- brtealone2N[-outliers, ]
+
+```
+
+
+Log transform
+```{r}
+summary(brtealone2N$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brtealone2N$v_count)   
+
+
+filtered_data2nB <- brtealone2N %>%
+  filter(Biomass > 0, (1 + 0.1 * brtealone2N$b_count) > 0)   
+
+ 
+filtered_data2nB$log_Biomass <- log(filtered_data2nB$Biomass)
+
+b <- 1
+equ1_log <- function(wm, alpha, N, b) {
+  return(-b * (log(wm) + log(1 + alpha * N)))
+}
+# Re-fit the log-transformed model
+fit_log2nb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data2nB, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log2nb)
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log2nb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <- 42.182 
+
+
+# Re-fit the log-transformed model
+fit_log2nb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data2nB, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log2nb)
+
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log2nb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+
+
+fitted_values <- fitted(fit_log2nb)
+# Create residuals vs fitted values plot
+plot(fitted_values, residuals,
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values",
+     pch = 20, col = "blue")
+abline(h = 0, col = "red", lwd = 2)
+```
+
+
+#### Biculture
+```{r}
+rm(wmb)
+wmb <- max(brte2N$Biomass)
+b <- .98573
+
+fit_old2N <- nls(Biomass ~ equ4(wmb, betab, b_count, alphabv, v_count, b), data = brte2N, 
+                start = list(betab = 0.1, alphabv = 0.1))
+
+summary(fit_old2N)
+
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old2N)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old2N)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brte2N <- brte2N[-outliers, ]
+```
+
+
+Log transform
+```{r}
+summary(brte2N$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brte2N$b_count)   
+
+
+
+b <- 0.98573
+ 
+filtered_data2b <- brte2N %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (b_count + 0.1 * v_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_data2b$b_count <- as.numeric(filtered_data2b$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_data2b$log_Biomass <- log(filtered_data2b$Biomass)
+mean(filtered_data2b$Biomass)
+# Define the log-transformed model function
+
+
+
+```
+
+#### Final model
+```{r}
+
+# Fit the log-transformed model
+b <- 0.98573
+fit_log2b <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data2b, 
+               start = list(betab = 0.1, alphavb = 0.1))
+
+# Check the fit
+summary(fit_log2b)
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1b)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+### Bromus tectorum soil
+
+#### Monoculture increasing density
+```{r}
+brte <- subset(psf_data, Species=='BRTE')
+brte2 <- subset(brte, Phase == '2')
+brte2B <- subset(brte2, Soil == 'BRTE')
+
+wmb <- max(brte2B$Biomass)
+
+
+brtealone2B <- subset(brte2B, Cheat_pct == '100')
+
+
+
+wm <- subset(brtealone2B, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- brtealone2B$b_count
+bb <- 1
+rm(alphab)
+rm(b)
+
+
+
+fitb2B <- nls(Biomass ~ equ2(wm, alphab, b_count, bb), data = brtealone2B, 
+                   start = list(alphab = 0.1)) 
+
+summary(fitb2B)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fitb2B)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brtealone2B <- brtealone2B[-outliers, ]
+
+wm <- mean(brtealone2B$Biomass)
+```
+
+Log transform
+```{r}
+summary(brtealone2B$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brtealone2B$v_count)   
+
+
+filtered_data2BB <- brtealone2B %>%
+  filter(Biomass > 0, (1 + 0.1 * brtealone2B$b_count) > 0)   
+
+ 
+filtered_data2BB$log_Biomass <- log(filtered_data2BB$Biomass)
+
+b <-1
+# Re-fit the log-transformed model
+fit_log2nb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data2BB, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log2nb)
+
+
+```
+
+
+Cleaned analysis (b)
+```{r}
+rm(b)
+alpha <-  72.054
+
+
+# Re-fit the log-transformed model
+fit_log2nb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data2BB, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log2nb)
+
+
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log2nb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+#### Biculture
+```{r}
+rm(alphvb)
+wmb <- max(brte2B$Biomass)
+b <- 0.93665
+
+
+
+fit_old2B <- nls(Biomass ~ equ4(wmb, betab, b_count, alphavb, v_count, b), data = brte2B, 
+                start = list(betab = 1, alphavb = 0.1))
+
+summary(fit_old2B)
+
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old2B)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old2B)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brte2B <- brte2B[-outliers, ]
+```
+
+
+
+Log transform
+```{r}
+summary(brte2B$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brte2B$b_count)   
+
+
+
+ 
+filtered_data2b <- brte2B %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (b_count + 0.1 * v_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_data2b$b_count <- as.numeric(filtered_data2b$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_data2b$log_Biomass <- log(filtered_data2b$Biomass)
+mean(filtered_data2b$Biomass)
+# Define the log-transformed model function
+
+```
+
+
+#### Final model
+Per capita aboveground biomass (Bromus tectorum)
+```{r}
+# Fit the log-transformed model
+b <- 0.93665
+fit_log2n <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data2b, 
+               start = list(betab = 1, alphavb = 0.1))
+
+# Check the fit
+summary(fit_log2b)
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log2b)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+### Ventenata dubia soil
+
+#### Monoculture increasing density
+```{r}
+brte <- subset(psf_data, Species=='BRTE')
+brte2 <- subset(brte, Phase == '2')
+brte2V <- subset(brte2, Soil == 'VEDU')
+
+wmb <- max(brte2V$Biomass)
+
+
+brtealone2V <- subset(brte2V, Cheat_pct == '100')
+
+
+
+wm <- subset(brtealone2V, Total_plants == '1')
+wm <- mean(wm$Biomass)
+N <- brtealone2V$b_count
+bb <- 1
+#rm(alphab)
+
+
+
+fitb2V <- nls(Biomass ~ equ2(wm, alphab, b_count, bb), data = brtealone2V, 
+                   start = list(alphab = 0.1)) 
+
+summary(fitb2V)
+```
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fitb2V)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brtealone2V <- brtealone2V[-outliers, ]
+wm <- subset(brtealone2V, Total_plants == '1')
+wm <- mean(wm$Biomass)
+```
+
+Log transform
+```{r}
+summary(brtealone2V$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brtealone2V$v_count)   
+
+
+filtered_data2Bv <- brtealone2V %>%
+  filter(Biomass > 0, (1 + 0.1 * brtealone2V$b_count) > 0)   
+
+ 
+filtered_data2Bv$log_Biomass <- log(filtered_data2Bv$Biomass)
+
+b <-1
+# Re-fit the log-transformed model
+fit_log2vb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data2Bv, 
+               start = list(alpha = 0.1))
+
+# Check the fit
+summary(fit_log2vb)
+```
+
+
+Check residuals
+```{r}
+# Get the residuals
+residuals <- resid(fit_log2vb)
+qqnorm(residuals)
+qqline(residuals, col="red")
+```
+
+cleaned analysis (b)
+```{r}
+rm(b)
+alpha <-  26.575
+
+
+# Re-fit the log-transformed model
+fit_log2vb <- nls(log_Biomass ~ equ1_log(wm, alpha, b_count, b), 
+               data = filtered_data2Bv, 
+               start = list(b = -1))
+
+# Check the fit
+summary(fit_log2vb)
+
+
+```
+
+
+
+#### Biculture
+```{r}
+rm(wmb)
+wmb <- max(brte2V$Biomass)
+b <- 0.97601
+
+fit_old2V <- nls(Biomass ~ equ4(wmb, betab, b_count, alphabv, v_count, b), data = brte2V, 
+                start = list(betab = 0.1, alphabv = 0.1))
+
+summary(fit_old2V)
+
+```
+
+Check residuals
+```{r}
+residuals <- residuals(fit_old2V)
+qq <- qqnorm(residuals)
+qqline(residuals)
+
+# Get the residuals
+residuals <- resid(fit_old2V)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+Remove outliers
+```{r}
+# Identify outliers using the IQR method
+Q1 <- quantile(residuals, 0.25)
+Q3 <- quantile(residuals, 0.75)
+IQR <- Q3 - Q1
+lower_bound <- Q1 - 1.5 * IQR
+upper_bound <- Q3 + 1.5 * IQR
+outliers <- which(residuals < lower_bound | residuals > upper_bound)
+
+# Remove outliers from the dataset
+brte2V <- brte2V[-outliers, ]
+```
+
+
+Log transform
+```{r}
+summary(brte2V$Biomass)  # Ensure all values are > 0
+
+ 
+summary(1 + 0.1 * brte2V$b_count)   
+
+ 
+filtered_data2v <- brte2V %>%
+  filter(Biomass > 0) %>%
+  filter(1 + 0.1 * (b_count + 0.1 * v_count) > 0)  # Adjust the initial values of betav and alphabv accordingly
+filtered_data2v$b_count <- as.numeric(filtered_data2v$b_count)
+# Log-transform the dependent variable (Biomass)
+filtered_data2v$log_Biomass <- log(filtered_data2v$Biomass)
+mean(filtered_data2v$Biomass)
+# Define the log-transformed model function
+```
+
+#### Final model
+Per capita aboveground biomass (Bromus tectorum)
+```{r}
+
+# Fit the log-transformed model
+b <-  0.97601
+fit_log2v <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data2v, 
+               start = list(betab = 0.1, alphavb = 0.1))
+
+# Check the fit
+summary(fit_log2v)
+
+```
+
+Check residuals
+```{r}
+residuals <- resid(fit_log1v)
+qqnorm(residuals)
+qqline(residuals, col="red")
+hist(residuals, breaks = 20, main = "Histogram of Residuals")
+```
+
+
+
+## Bootstrapping
+
+Final models 
+```{r}
+## phase 1
+
+# ventenata neutral
+b <- 0.96699    
+fit_logv2n <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2n, 
+               start = list(betav = 1, alphabv = 0.1))
+# ventenata ventenata 
+b <- 0.9371
+fit_logv2v <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2v, 
+               start = list(betav = 0.1, alphabv = 0.1))
+# ventenata cheatgrass
+b <-  0.94403
+fit_logv2b <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2b, 
+               start = list(betav = 0.1, alphabv = 0.1))
+
+#cheatgrass neutral
+b <- 0.9812
+fit_log1bn <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data1b, 
+               start = list(betab = 0.1, alphavb = 0.1))
+#cheatgrass cheatgrass
+b <- 1.04507
+fit_log1b <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data1b, 
+               start = list(betab = 0.1, alphavb = 0.1))
+#cheatgrass ventenata
+b <- 1.1174
+fit_log1v <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data1v, 
+               start = list(betab = 0.1, alphavb = 0.1))
+
+## phase 2
+#ventenata neutral
+b <- 0.98091
+fit_logv2n <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2n, 
+               start = list(betav = 1, alphabv = 0.1))
+#ventenata ventenata
+b <-  0.91750  
+fit_logv2v <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2v, 
+               start = list(betav = 0.1, alphabv = 0.1))
+#ventenata cheatgrass
+b <- 0.96376
+fit_logv2b <- nls(log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b), 
+               data = filtered_datav2b, 
+               start = list(betav = 0.1, alphabv = 0.1))
+#cheatgrass neutral
+b <- 0.98573
+fit_log2n <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data2b, 
+               start = list(betab = 1, alphavb = 0.1))
+#cheatgrass cheatgrass
+b <- 0.93665
+fit_log2b <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data2b, 
+               start = list(betab = 1, alphavb = 0.1))
+#cheatgrass ventenata
+b <-  0.97601
+fit_log2v <- nls(log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b), 
+               data = filtered_data2v, 
+               start = list(betab = 0.1, alphavb = 0.1))
+```
+
+### Boot function
+```{r}
+bootstrap_nls <- function(data, model_formula, start_params, fixed_b, n_boot = 1000) {
+  set.seed(123)  
+  
+  boot_results <- replicate(n_boot, {
+    # Check if dataset is large enough
+    if (nrow(data) < 5) return(rep(NA, length(start_params))) 
+
+    # Resample with replacement
+    boot_sample <- data[sample(which(!is.na(data$log_Biomass)), replace = TRUE), ]
+    
+    if (length(unique(boot_sample$log_Biomass)) < length(start_params)) return(rep(NA, length(start_params)))
+
+    # Try fitting the model
+    fit <- tryCatch(
+      nls(model_formula, data = boot_sample, start = start_params, control = list(maxiter = 500)),
+      error = function(e) return(NA)
+    )
+
+    # Check if the model fit failed
+    if (inherits(fit, "try-error") || is.na(fit[1])) return(rep(NA, length(start_params)))
+
+    coef(fit)  # Extract competition coefficients
+  }, simplify = "matrix")
+
+  boot_results <- as.data.frame(t(boot_results))  # Convert to data frame
+  colnames(boot_results) <- names(start_params)  # Name columns based on parameters
+  return(boot_results)
+}
+```
+
+### Bootstrap models
+
+###### Phase 1
+
+Ventenata dubia neutral soil
+```{r}
+start_params_ventenata <- list(betav = 0.1, alphabv = 0.1)
+b_ventenata <- 0.96699
+
+ventenata_boot1n <- bootstrap_nls(
+  data = filtered_datav2n, 
+  model_formula = log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b_ventenata),
+  start_params = start_params_ventenata, 
+  fixed_b = b_ventenata
+)
+
+```
+
+Bromus tectorum neutral soil 
+```{r}
+start_params_cheatgrass <- list(betab = 0.1, alphavb = 0.1)
+b_cheatgrass <- 0.9812
+
+cheatgrass_boot1n <- bootstrap_nls(
+  data = filtered_data1b, 
+  model_formula = log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b_cheatgrass),
+  start_params = start_params_cheatgrass, 
+  fixed_b = b_cheatgrass
+)
+
+```
+
+
+Ventenata dubia Ventenata dubia soil
+```{r}
+start_params_ventenata <- list(betav = 0.1, alphabv = 0.1)
+b_ventenata <- 0.9371
+
+ventenata_boot1v <- bootstrap_nls(
+  data = filtered_datav2n, 
+  model_formula = log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b_ventenata),
+  start_params = start_params_ventenata, 
+  fixed_b = b_ventenata
+)
+
+```
+
+Bromus tectorum Ventenata dubia soil 
+```{r}
+start_params_cheatgrass <- list(betab = 0.1, alphavb = 0.1)
+b_cheatgrass <- 1.1174
+
+cheatgrass_boot1v <- bootstrap_nls(
+  data = filtered_data1b, 
+  model_formula = log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b_cheatgrass),
+  start_params = start_params_cheatgrass, 
+  fixed_b = b_cheatgrass
+)
+
+```
+
+
+Ventenata dubia Bromus tectorum soil
+```{r}
+start_params_ventenata <- list(betav = 0.1, alphabv = 0.1)
+b_ventenata <- 0.94403
+
+ventenata_boot1b <- bootstrap_nls(
+  data = filtered_datav2n, 
+  model_formula = log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b_ventenata),
+  start_params = start_params_ventenata, 
+  fixed_b = b_ventenata
+)
+
+```
+
+Bromus tectorum Bromus tectorum soil 
+```{r}
+start_params_cheatgrass <- list(betab = 0.1, alphavb = 0.1)
+b_cheatgrass <- 1.04507
+
+cheatgrass_boot1b <- bootstrap_nls(
+  data = filtered_data1b, 
+  model_formula = log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b_cheatgrass),
+  start_params = start_params_cheatgrass, 
+  fixed_b = b_cheatgrass
+)
+
+```
+
+###### Phase 2
+
+Ventenata dubia neutral soil
+```{r}
+start_params_ventenata <- list(betav = 0.1, alphabv = 0.1)
+b_ventenata <- 0.98091
+
+ventenata_boot2n <- bootstrap_nls(
+  data = filtered_datav2n, 
+  model_formula = log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b_ventenata),
+  start_params = start_params_ventenata, 
+  fixed_b = b_ventenata
+)
+
+```
+
+Bromus tectorum neutral soil 
+```{r}
+start_params_cheatgrass <- list(betab = 0.1, alphavb = 0.1)
+b_cheatgrass <- 0.98573
+
+cheatgrass_boot2n <- bootstrap_nls(
+  data = filtered_data1b, 
+  model_formula = log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b_cheatgrass),
+  start_params = start_params_cheatgrass, 
+  fixed_b = b_cheatgrass
+)
+
+```
+
+
+Ventenata dubia Ventenata dubia soil
+```{r}
+start_params_ventenata <- list(betav = 0.1, alphabv = 0.1)
+b_ventenata <- 0.91750 
+
+ventenata_boot2v <- bootstrap_nls(
+  data = filtered_datav2n, 
+  model_formula = log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b_ventenata),
+  start_params = start_params_ventenata, 
+  fixed_b = b_ventenata
+)
+
+```
+
+Bromus tectorum Ventenata dubia soil 
+```{r}
+start_params_cheatgrass <- list(betab = 0.1, alphavb = 0.1)
+b_cheatgrass <- 0.97601
+
+cheatgrass_boot2v <- bootstrap_nls(
+  data = filtered_data1b, 
+  model_formula = log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b_cheatgrass),
+  start_params = start_params_cheatgrass, 
+  fixed_b = b_cheatgrass
+)
+
+```
+
+
+Ventenata dubia Bromus tectorum soil
+```{r}
+start_params_ventenata <- list(betav = 0.1, alphabv = 0.1)
+b_ventenata <- 0.96376
+
+ventenata_boot2b <- bootstrap_nls(
+  data = filtered_datav2n, 
+  model_formula = log_Biomass ~ equ3_log(wmv, betav, v_count, alphabv, b_count, b_ventenata),
+  start_params = start_params_ventenata, 
+  fixed_b = b_ventenata
+)
+
+```
+
+Bromus tectorum Bromus tectorum soil 
+```{r}
+start_params_cheatgrass <- list(betab = 0.1, alphavb = 0.1)
+b_cheatgrass <- 0.93665
+
+cheatgrass_boot2b <- bootstrap_nls(
+  data = filtered_data1b, 
+  model_formula = log_Biomass ~ equ4_log(wmb, betab, v_count, alphavb, b_count, b_cheatgrass),
+  start_params = start_params_cheatgrass, 
+  fixed_b = b_cheatgrass
+)
+
+```
+
+#### Results and analysis
+
+phase 1
+Ventenata dubia neutral Soil
+```{r}
+summary_ventenata1n <- ventenata_boot1n %>%
+  summarise(
+    betav_mean = mean(betav, na.rm = TRUE),
+    betav_median = median(betav, na.rm = TRUE),
+    betav_lower = quantile(betav, 0.025, na.rm = TRUE),
+    betav_upper = quantile(betav, 0.975, na.rm = TRUE),
+    
+    alphabv_mean = mean(alphabv, na.rm = TRUE),
+    alphabv_median = median(alphabv, na.rm = TRUE),
+    alphabv_lower = quantile(alphabv, 0.025, na.rm = TRUE),
+    alphabv_upper = quantile(alphabv, 0.975, na.rm = TRUE)
+  )
+
+print(summary_ventenata1n)
+
+```
+
+Bromus tectorum neutral Soil
+```{r}
+summary_cheatgrass1n <- cheatgrass_boot1n %>%
+  summarise(
+    betab_mean = mean(betab, na.rm = TRUE),
+    betab_median = median(betab, na.rm = TRUE),
+    betab_lower = quantile(betab, 0.025, na.rm = TRUE),
+    betab_upper = quantile(betab, 0.975, na.rm = TRUE),
+
+    alphavb_mean = mean(alphavb, na.rm = TRUE),
+    alphavb_median = median(alphavb, na.rm = TRUE),
+    alphavb_lower = quantile(alphavb, 0.025, na.rm = TRUE),
+    alphavb_upper = quantile(alphavb, 0.975, na.rm = TRUE)
+  )
+
+print(summary_cheatgrass1n)
+
+```
+
+Ventenata dubia Ventenata dubia Soil
+```{r}
+summary_ventenata1v <- ventenata_boot1v %>%
+  summarise(
+    betav_mean = mean(betav, na.rm = TRUE),
+    betav_median = median(betav, na.rm = TRUE),
+    betav_lower = quantile(betav, 0.025, na.rm = TRUE),
+    betav_upper = quantile(betav, 0.975, na.rm = TRUE),
+    
+    alphabv_mean = mean(alphabv, na.rm = TRUE),
+    alphabv_median = median(alphabv, na.rm = TRUE),
+    alphabv_lower = quantile(alphabv, 0.025, na.rm = TRUE),
+    alphabv_upper = quantile(alphabv, 0.975, na.rm = TRUE)
+  )
+
+print(summary_ventenata1v)
+```
+
+Bromus tectorum Ventenata dubia Soil
+```{r}
+summary_cheatgrass1v <- cheatgrass_boot1v %>%
+  summarise(
+    betab_mean = mean(betab, na.rm = TRUE),
+    betab_median = median(betab, na.rm = TRUE),
+    betab_lower = quantile(betab, 0.025, na.rm = TRUE),
+    betab_upper = quantile(betab, 0.975, na.rm = TRUE),
+
+    alphavb_mean = mean(alphavb, na.rm = TRUE),
+    alphavb_median = median(alphavb, na.rm = TRUE),
+    alphavb_lower = quantile(alphavb, 0.025, na.rm = TRUE),
+    alphavb_upper = quantile(alphavb, 0.975, na.rm = TRUE)
+  )
+
+print(summary_cheatgrass1v)
+
+```
+
+Ventenata dubia Bromus tectorum Soil
+```{r}
+summary_ventenata1b <- ventenata_boot1b %>%
+  summarise(
+    betav_mean = mean(betav, na.rm = TRUE),
+    betav_median = median(betav, na.rm = TRUE),
+    betav_lower = quantile(betav, 0.025, na.rm = TRUE),
+    betav_upper = quantile(betav, 0.975, na.rm = TRUE),
+    
+    alphabv_mean = mean(alphabv, na.rm = TRUE),
+    alphabv_median = median(alphabv, na.rm = TRUE),
+    alphabv_lower = quantile(alphabv, 0.025, na.rm = TRUE),
+    alphabv_upper = quantile(alphabv, 0.975, na.rm = TRUE)
+  )
+
+print(summary_ventenata1b)
+```
+
+Bromus tectorum Bromus tectorum Soil
+```{r}
+summary_cheatgrass1b <- cheatgrass_boot1b %>%
+  summarise(
+    betab_mean = mean(betab, na.rm = TRUE),
+    betab_median = median(betab, na.rm = TRUE),
+    betab_lower = quantile(betab, 0.025, na.rm = TRUE),
+    betab_upper = quantile(betab, 0.975, na.rm = TRUE),
+
+    alphavb_mean = mean(alphavb, na.rm = TRUE),
+    alphavb_median = median(alphavb, na.rm = TRUE),
+    alphavb_lower = quantile(alphavb, 0.025, na.rm = TRUE),
+    alphavb_upper = quantile(alphavb, 0.975, na.rm = TRUE)
+  )
+
+print(summary_cheatgrass1b)
+
+```
+
+
+
+Phase 2
+Ventenata dubia neutral Soil
+```{r}
+summary_ventenata2n <- ventenata_boot2n %>%
+  summarise(
+    betav_mean = mean(betav, na.rm = TRUE),
+    betav_median = median(betav, na.rm = TRUE),
+    betav_lower = quantile(betav, 0.025, na.rm = TRUE),
+    betav_upper = quantile(betav, 0.975, na.rm = TRUE),
+    
+    alphabv_mean = mean(alphabv, na.rm = TRUE),
+    alphabv_median = median(alphabv, na.rm = TRUE),
+    alphabv_lower = quantile(alphabv, 0.025, na.rm = TRUE),
+    alphabv_upper = quantile(alphabv, 0.975, na.rm = TRUE)
+  )
+
+print(summary_ventenata2n)
+
+```
+
+Bromus tectorum neutral Soil
+```{r}
+summary_cheatgrass2n <- cheatgrass_boot2n %>%
+  summarise(
+    betab_mean = mean(betab, na.rm = TRUE),
+    betab_median = median(betab, na.rm = TRUE),
+    betab_lower = quantile(betab, 0.025, na.rm = TRUE),
+    betab_upper = quantile(betab, 0.975, na.rm = TRUE),
+
+    alphavb_mean = mean(alphavb, na.rm = TRUE),
+    alphavb_median = median(alphavb, na.rm = TRUE),
+    alphavb_lower = quantile(alphavb, 0.025, na.rm = TRUE),
+    alphavb_upper = quantile(alphavb, 0.975, na.rm = TRUE)
+  )
+
+print(summary_cheatgrass2n)
+
+```
+
+Ventenata dubia Ventenata dubia Soil
+```{r}
+summary_ventenata2v <- ventenata_boot2v %>%
+  summarise(
+    betav_mean = mean(betav, na.rm = TRUE),
+    betav_median = median(betav, na.rm = TRUE),
+    betav_lower = quantile(betav, 0.025, na.rm = TRUE),
+    betav_upper = quantile(betav, 0.975, na.rm = TRUE),
+    
+    alphabv_mean = mean(alphabv, na.rm = TRUE),
+    alphabv_median = median(alphabv, na.rm = TRUE),
+    alphabv_lower = quantile(alphabv, 0.025, na.rm = TRUE),
+    alphabv_upper = quantile(alphabv, 0.975, na.rm = TRUE)
+  )
+
+print(summary_ventenata2v)
+```
+
+Bromus tectorum Ventenata dubia Soil
+```{r}
+summary_cheatgrass2v <- cheatgrass_boot2v %>%
+  summarise(
+    betab_mean = mean(betab, na.rm = TRUE),
+    betab_median = median(betab, na.rm = TRUE),
+    betab_lower = quantile(betab, 0.025, na.rm = TRUE),
+    betab_upper = quantile(betab, 0.975, na.rm = TRUE),
+
+    alphavb_mean = mean(alphavb, na.rm = TRUE),
+    alphavb_median = median(alphavb, na.rm = TRUE),
+    alphavb_lower = quantile(alphavb, 0.025, na.rm = TRUE),
+    alphavb_upper = quantile(alphavb, 0.975, na.rm = TRUE)
+  )
+
+print(summary_cheatgrass2v)
+
+```
+
+Ventenata dubia Bromus tectorum Soil
+```{r}
+summary_ventenata2b <- ventenata_boot2b %>%
+  summarise(
+    betav_mean = mean(betav, na.rm = TRUE),
+    betav_median = median(betav, na.rm = TRUE),
+    betav_lower = quantile(betav, 0.025, na.rm = TRUE),
+    betav_upper = quantile(betav, 0.975, na.rm = TRUE),
+    
+    alphabv_mean = mean(alphabv, na.rm = TRUE),
+    alphabv_median = median(alphabv, na.rm = TRUE),
+    alphabv_lower = quantile(alphabv, 0.025, na.rm = TRUE),
+    alphabv_upper = quantile(alphabv, 0.975, na.rm = TRUE)
+  )
+
+print(summary_ventenata2b)
+```
+
+Bromus tectorum Bromus tectorum Soil
+```{r}
+summary_cheatgrass2b <- cheatgrass_boot2b %>%
+  summarise(
+    betab_mean = mean(betab, na.rm = TRUE),
+    betab_median = median(betab, na.rm = TRUE),
+    betab_lower = quantile(betab, 0.025, na.rm = TRUE),
+    betab_upper = quantile(betab, 0.975, na.rm = TRUE),
+
+    alphavb_mean = mean(alphavb, na.rm = TRUE),
+    alphavb_median = median(alphavb, na.rm = TRUE),
+    alphavb_lower = quantile(alphavb, 0.025, na.rm = TRUE),
+    alphavb_upper = quantile(alphavb, 0.975, na.rm = TRUE)
+  )
+
+print(summary_cheatgrass2b)
+
+```
+
+
+
+##### Figures
+```{r}
+library(ggplot2)
+
+#ventenata neutral
+ggplot(ventenata_boot1n, aes(x = betav)) +
+  geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
+  geom_vline(xintercept = summary_ventenata1n$betav_mean, color = "red", linetype = "dashed") +
+  labs(title = "Bootstrap Distribution of β (Ventenata)",
+       x = "Competition Coefficient (betav)", y = "Frequency")
+
+ggplot(ventenata_boot1n, aes(x = alphabv)) +
+  geom_histogram(bins = 30, fill = "darkorange", alpha = 0.7) +
+  geom_vline(xintercept = summary_ventenata1n$alphabv_mean, color = "red", linetype = "dashed") +
+  labs(title = "Bootstrap Distribution of α (Effect of Cheatgrass on Ventenata)",
+       x = "Competition Coefficient (alphabv)", y = "Frequency")
+
+#cheatgrass neutral
+ggplot(cheatgrass_boot1n, aes(x = betab)) +
+  geom_histogram(bins = 30, fill = "forestgreen", alpha = 0.7) +
+  geom_vline(xintercept = summary_cheatgrass1n$betab_mean, color = "red", linetype = "dashed") +
+  labs(title = "Bootstrap Distribution of β (Cheatgrass)",
+       x = "Competition Coefficient (betab)", y = "Frequency")
+
+ggplot(cheatgrass_boot1n, aes(x = alphavb)) +
+  geom_histogram(bins = 30, fill = "purple", alpha = 0.7) +
+  geom_vline(xintercept = summary_cheatgrass1n$alphavb_mean, color = "red", linetype = "dashed") +
+  labs(title = "Bootstrap Distribution of α (Effect of Ventenata on Cheatgrass)",
+       x = "Competition Coefficient (alphavb)", y = "Frequency")
+
+```
+
+
+```{r}
+library(readxl)
+df <- read_excel("psf bootstrap.xlsx")
+library(ggplot2)
+
+```
+
+```{r}
+p1 <- subset(df, df$Phase == '1')
+p1 <- as.data.frame(p1)
+barplot_data <- p1[, c("species", "soil", "beta", "b_ci_lower", "b_ci_upper")]
+```
+
+```{r}
+barplot_data$soil <- factor(barplot_data$soil, levels = c("Neutral", "Bromus tectorum", "Ventenata dubia"))
+
+
+betap1<-ggplot(barplot_data, aes(x = soil, y = beta, fill = species)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_errorbar(aes(ymin = b_ci_lower, ymax = b_ci_upper), 
+                  position = position_dodge(0.9), width = 0.2) +
+    #geom_text(aes(label = round(beta, 3)), 
+     #         nudge_x = -0.15, nudge_y = 0.1) +  # Add labels above bars
+  geom_text(
+    aes(x = soil, y = beta, label = round(beta, 3), group = species),
+    position = position_dodge(width = 1),
+    vjust = -0.5, hjust = -0.5, size = 2.6
+  ) + 
+  
+    scale_fill_manual(values = c("skyblue3", "mistyrose2")) +
+    labs(x = "Soil type",
+         y = "Beta coefficient",
+         fill = "Species") +
+    theme_light()+
+  theme(legend.position = "none", axis.text.x = element_text(face = "italic"))
+
+
+```
+
+
+```{r}
+p2 <- subset(df, df$Phase == '2')
+p2 <- as.data.frame(p2)
+barplot_data2 <- p2[, c("species", "soil", "beta", "b_ci_lower", "b_ci_upper")]
+```
+
+```{r}
+barplot_data2$soil <- factor(barplot_data2$soil, levels = c("Neutral", "Bromus tectorum", "Ventenata dubia"))
+
+
+betap2<- ggplot(barplot_data2, aes(x = soil, y = beta, fill = species)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_errorbar(aes(ymin = b_ci_lower, ymax = b_ci_upper), 
+                  position = position_dodge(0.9), width = 0.2) +
+    #geom_text(aes(label = round(beta, 3)), 
+     #         nudge_x = -0.15, nudge_y = 0.1) +  # Add labels above bars
+  geom_text(
+    aes(x = soil, y = beta, label = round(beta, 3), group = species),
+    position = position_dodge(width = 1),
+    vjust = -0.5, hjust = -0.5, size = 2.6
+  ) + 
+  
+    scale_fill_manual(values = c("skyblue3", "mistyrose2")) +
+    labs(x = "Soil type",
+         y = "Beta coefficient",
+         fill = "Species") +
+    theme_light()+
+  theme(legend.position = "none", axis.text.x = element_text(face = "italic"))
+
+
+```
+
+
+
+```{r}
+p1 <- subset(df, df$Phase == '1')
+p1 <- as.data.frame(p1)
+barplot_dataa <- p1[, c("species", "soil", "alpha", "a_ci_lower", "a_ci_upper")]
+```
+
+```{r}
+barplot_dataa$soil <- factor(barplot_dataa$soil, levels = c("Neutral", "Bromus tectorum", "Ventenata dubia"))
+
+
+alphap1<-ggplot(barplot_dataa, aes(x = soil, y = alpha, fill = species)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_errorbar(aes(ymin = a_ci_lower, ymax = a_ci_upper), 
+                  position = position_dodge(0.9), width = 0.2) +
+    #geom_text(aes(label = round(beta, 3)), 
+     #         nudge_x = -0.15, nudge_y = 0.1) +  # Add labels above bars
+  geom_text(
+    aes(x = soil, y = alpha, label = round(alpha, 3), group = species),
+    position = position_dodge(width = 1),
+    vjust = -0.5, hjust = -0.5, size = 2.6
+  ) + 
+  
+    scale_fill_manual(values = c("royalblue1", "pink")) +
+    labs(x = "Soil type",
+         y = "Alpha coefficient",
+         fill = "Species") +
+    theme_light()+
+  theme(legend.position = "none", axis.text.x = element_text(face = "italic"))
+
+
+```
+
+
+```{r}
+p2 <- subset(df, df$Phase == '2')
+p2 <- as.data.frame(p2)
+barplot_data2a <- p2[, c("species", "soil", "alpha", "a_ci_lower", "a_ci_upper")]
+```
+
+```{r}
+barplot_data2a$soil <- factor(barplot_data2a$soil, levels = c("Neutral", "Bromus tectorum", "Ventenata dubia"))
+
+
+alphap2<- ggplot(barplot_data2a, aes(x = soil, y = alpha, fill = species)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_errorbar(aes(ymin = a_ci_lower, ymax = a_ci_upper), 
+                  position = position_dodge(0.9), width = 0.2) +
+    #geom_text(aes(label = round(beta, 3)), 
+     #         nudge_x = -0.15, nudge_y = 0.1) +  # Add labels above bars
+  geom_text(
+    aes(x = soil, y = alpha, label = round(alpha, 3), group = species),
+    position = position_dodge(width = 1),
+    vjust = -0.5, hjust = -0.5, size = 2.6
+  ) + 
+  
+    scale_fill_manual(values = c("royalblue1", "pink")) +
+    labs(x = "Soil type",
+         y = "Alpha coefficient",
+         fill = "Species") +
+    theme_light()+
+  theme(legend.position = "none", axis.text.x = element_text(face = "italic"))
+
+```
+
+
+
+```{r}
+ggarrange(betap1, alphap1)
+ggarrange(betap2, alphap2)
+```
+
+
+
+
+
